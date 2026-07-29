@@ -8,7 +8,7 @@ FROM eclipse-temurin:25-jre-alpine
 
 WORKDIR /app
 
-RUN mkdir /home
+RUN mkdir -p /app/home/
 
 COPY --from=build /app/target/*jar-with-dependencies.jar app.jar
 
