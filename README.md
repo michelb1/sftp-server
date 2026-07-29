@@ -22,7 +22,7 @@ docker run -e SFTP\_USERS='michelb1:$2a$12$k2v0Ck0rELz2fZvl37LabOHlCW.UxYQrFaL2n
 \-p 2223:2222 sftpserver:latest
 
 
-**Important**: The home folder must be located under /app. Due to non-root container security policies, creating the directory in any other path will fail with permission errors. If you need persistent storage, ensure you mount your volume directly inside /app and configure the appropriate security context (fsGroup: 1001).
+**Important**: The home folder must be located under /app/home/. Due to non-root container security policies, creating the directory in any other path will fail with permission errors. If you need persistent storage, ensure you mount your volume directly inside /app/home/ and configure the appropriate security context (fsGroup: 1001).
 
 
 
