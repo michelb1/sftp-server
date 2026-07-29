@@ -24,3 +24,16 @@ docker run -e SFTP\_USERS='michelb1:$2a$12$k2v0Ck0rELz2fZvl37LabOHlCW.UxYQrFaL2n
 
 **Important**: The home folder must be located under /app. Due to non-root container security policies, creating the directory in any other path will fail with permission errors. If you need persistent storage, ensure you mount your volume directly inside /app and configure the appropriate security context (fsGroup: 1001).
 
+
+
+## Licenses & Third-Party Software
+
+This project utilizes the following third-party open-source libraries:
+
+### Apache License 2.0
+* [Apache MINA SSHD](https://mina.apache.org/sshd-project)
+* [Spring Framework & Spring Security](https://spring.io/projects/spring-framework)
+* [Apache Commons Logging](https://apache.org)
+
+### MIT License
+* [SLF4J (Simple Logging Facade for Java)](https://slf4j.org)
