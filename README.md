@@ -18,11 +18,11 @@ SFTP\_DELETE\_FOLDER\_PERMISSION=true/false (Default false)
 
 docker build -t sftpserver:latest .
 
-docker run -e SFTP\_USERS='michelb1:$2a$12$k2v0Ck0rELz2fZvl37LabOHlCW.UxYQrFaL2nRQPOlWv1uhNz8CFK:/app/home/michelb1:upload' 
-\-p 2223:2222 sftpserver:latest
+docker run -e SFTP\_USERS='michelb1:$2a$12$AIO5VkkYfTGBoByYg4rSHeQy0rUOWDQ1zUnIBhjEMkcWlhMi069.u:/app/home/michelb1:upload' 
+\-p 2222:2222 sftpserver:latest
 
 
-**Important**: The home folder must be located under /app/home/. Due to non-root container security policies, creating the directory in any other path will fail with permission errors. If you need persistent storage, ensure you mount your volume directly inside /app/home/ and configure the appropriate security context (fsGroup: 1001).
+**Important**: The home folder must be located under /app/home/. Due to non-root container security policies, creating the directory in any other path will fail with permission errors. If you need persistent storage, ensure you mount your volume directly inside /app/home/ and configure the appropriate security context.
 
 
 
