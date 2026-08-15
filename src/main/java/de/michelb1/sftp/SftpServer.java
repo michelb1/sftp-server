@@ -9,6 +9,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.FileAttribute;
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Collections;
 import java.util.HashMap;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
+import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.session.ServerSession;
@@ -30,13 +32,17 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 public class SftpServer {
 
-  private static final int DEFAULT_PORT = 2222;
+  private static final Logger LOG = LoggerFactory.getLogger( SftpServer.class );
 
   private static final Map<String, UserConfig> userDatabase = new HashMap<>();
   private static final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
-  private static final Logger LOG = LoggerFactory.getLogger(SftpServer.class);
+  private static final SftpEnvironmentConfig config = new SftpEnvironmentConfig();
 
-  public static void main(String[] args) throws IOException, InterruptedException {
+  public static void main( String[] args ) throws IOException, InterruptedException {
+    new SftpServer().startServer();
+  }
+
+  private void startServer() throws InterruptedException, IOException {
     // 1. setup users
     loadUsersFromEnv();
 
@@ -47,13 +53,13 @@ public class SftpServer {
 
     // 2. initialize ssh Server
     try ( var sshd = SshServer.setUpDefaultServer(); ) {
-      sshd.setPort(getPortFromEnv());
+      sshd.setPort( config.getPort() );
 
-      // generate Host-Key
-      // TODO: support for load key from folder
-      sshd.setKeyPairProvider(generateInMemoryKey());
+      // set host key provider
+      sshd.setKeyPairProvider( getKeyProvider() );
 
       // 3. authenticate user
+      // TODO: support sshkey authentication
       sshd.setPasswordAuthenticator( ( username, password, _ ) -> {
         var user = userDatabase.get(username);
         return user != null && encoder.matches(password, user.getPassword());
@@ -62,8 +68,8 @@ public class SftpServer {
       // 4. Chroot / Virtual File System per user
       var fileSystemFactory = new VirtualFileSystemFactory();
 
-      userDatabase.forEach((username, config) -> {
-        fileSystemFactory.setUserHomeDir(username, Paths.get(config.getHomeDir()));
+      userDatabase.forEach( ( username, userconfig ) -> {
+        fileSystemFactory.setUserHomeDir( username, Paths.get( userconfig.getHomeDir() ) );
       });
 
       sshd.setFileSystemFactory(fileSystemFactory);
@@ -88,7 +94,7 @@ public class SftpServer {
 
         @Override
         public void removing(ServerSession session, Path path, boolean isDirectory) throws IOException {
-          if(isDirectory && !checkPermissionFromEnv("SFTP_DELETE_FOLDER_PERMISSION")) {
+          if ( isDirectory && !config.getBooleanValue( SftpEnvironmentConfig.SFTP_DELETE_FOLDER_PERMISSION ) ) {
             throw new AccessDeniedException ("Delete operation is forbidden.");
           }
           super.removing(session, path, isDirectory);
@@ -96,7 +102,7 @@ public class SftpServer {
 
         @Override
         public void creating(ServerSession session, Path path, Map<String, ?> attrs) throws IOException {
-          if(!checkPermissionFromEnv("SFTP_CREATE_FOLDER_PERMISSION")) {
+          if ( !config.getBooleanValue( SftpEnvironmentConfig.SFTP_CREATE_FOLDER_PERMISSION ) ) {
             throw new AccessDeniedException ("Directory creation is forbidden.");
           }
           super.creating(session, path, attrs);
@@ -108,8 +114,8 @@ public class SftpServer {
       // 6. start Server
       sshd.start();
 
-      LOG.info("sftp-server listening on port " + getPortFromEnv());
-      LOG.info("user created: " + userDatabase.keySet());
+      LOG.info( "sftp-server listening on port {}", Integer.valueOf( config.getPort() ) );
+      LOG.info( "user created: {}", userDatabase.keySet() );
 
       // wait for termination
       Thread.currentThread().join();
@@ -117,43 +123,43 @@ public class SftpServer {
   }
 
   /**
+   * get host key provider from file or generate random key inmemory
+   */
+  private KeyPairProvider getKeyProvider() {
+    var hostKeyPath = config.getHostKeyPath();
+    if ( hostKeyPath != null && !hostKeyPath.trim().isEmpty() ) {
+      var keyFile = new File( hostKeyPath );
+      if ( keyFile.exists() && keyFile.isFile() ) {
+        LOG.info( "using host key from: {}", keyFile.getAbsolutePath() );
+        return new FileKeyPairProvider( keyFile.toPath() );
+      }
+      LOG.error( "host key file not found: {}", keyFile.getAbsolutePath() );
+      System.exit( 1 );
+    }
+    LOG.info( "generating random host key inmemory" );
+    return KeyPairProvider.wrap( generateInMemoryKey() );
+  }
+
+  /**
    * generate random host key inmemory
    */
-  private static KeyPairProvider generateInMemoryKey(){
+  private KeyPair generateInMemoryKey() {
     try{
       var g = KeyPairGenerator.getInstance("RSA");
       g.initialize(2048);
-
-      var rsaKeyPair = g.generateKeyPair();
-      return KeyPairProvider.wrap(rsaKeyPair);
+      return g.generateKeyPair();
     } catch(Exception e){
-      throw new RuntimeException(e);
+      LOG.error( e.getMessage(), e );
+      throw new RuntimeException( "failed to generate host key", e );
     }
-  }
-
-  /**
-   * reads port from environment
-   * Default: 2222
-   */
-  private static int getPortFromEnv(){
-    var port = System.getenv("SFTP_PORT");
-    return port != null ? Integer.parseInt( port ) : DEFAULT_PORT;
-  }
-
-  /**
-   * Check permissions
-   * Default: false
-   */
-  private static boolean checkPermissionFromEnv(String envKey) {
-    return Boolean.parseBoolean(System.getenv(envKey));
   }
 
   /**
    * Format: user1:bcrypthash:home_dir1:subfolder1,subfolder2;user2:bcrypthash:home_dir2;
    * Subfolders are optional.
    */
-  private static void loadUsersFromEnv() {
-    var envRaw = System.getenv("SFTP_USERS");
+  private void loadUsersFromEnv() {
+    var envRaw = config.getUsers();
     if (envRaw == null || envRaw.trim().isEmpty()) {
       return;
     }
@@ -172,7 +178,7 @@ public class SftpServer {
         var homeFolder = new File(homeDir);
         if (!homeFolder.exists()) {
           homeFolder.mkdirs();
-          LOG.info("homefolder created: " + homeFolder.getAbsolutePath());
+          LOG.info( "homefolder created: {}", homeFolder.getAbsolutePath() );
         }
 
         // 2. create subfolders
@@ -184,7 +190,7 @@ public class SftpServer {
               var subDir = new File(homeFolder, cleanedSubfolder);
               if (!subDir.exists()) {
                 subDir.mkdirs();
-                LOG.info("subfolder created: " + subDir.getAbsolutePath());
+                LOG.info( "subfolder created: {}", subDir.getAbsolutePath() );
               }
             }
           }
@@ -192,7 +198,7 @@ public class SftpServer {
 
         userDatabase.put(username, new UserConfig(bcryptHash, homeDir));
       } else {
-        LOG.error("invalid userformat in SFTP_USERS: " + user);
+        LOG.error( "invalid userformat in SFTP_USERS: {}", user );
       }
     }
   }

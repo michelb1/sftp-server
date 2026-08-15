@@ -5,13 +5,15 @@ A lightweight SFTP server built on top of Apache MINA SSHD. This project is spec
 
 ## Config (Environment)
 
-SFTP\_USERS='user1:password(bcrypt):home\_dir1:subfolder1,subfolder2;user2:password(bcrypt):home\_dir2'
+SFTP_USERS='user1:password(bcrypt):home\_dir1:subfolder1,subfolder2;user2:password(bcrypt):home\_dir2'
 
-SFTP\_PORT=2222 (Default)
+SFTP_PORT=2222 (Default)
 
-SFTP\_CREATE\_FOLDER\_PERMISSION=true/false (Default false)
+SFTP_HOST_KEY_PATH (Default -> use a generated key)
 
-SFTP\_DELETE\_FOLDER\_PERMISSION=true/false (Default false)
+SFTP_CREATE_FOLDER_PERMISSION=true/false (Default false)
+
+SFTP_DELETE_FOLDER_PERMISSION=true/false (Default false)
 
 
 ## Docker
