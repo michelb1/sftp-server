@@ -11,11 +11,13 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.FileAttribute;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
@@ -38,11 +40,18 @@ public class SftpServer {
   private static final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
   private static final SftpEnvironmentConfig config = new SftpEnvironmentConfig();
 
-  public static void main( String[] args ) throws IOException, InterruptedException {
+  public static void main( String[] args ) throws IOException, InterruptedException, NoSuchAlgorithmException {
     new SftpServer().startServer();
   }
 
-  private void startServer() throws InterruptedException, IOException {
+  /**
+   * start SFTP server
+   *
+   * @throws InterruptedException
+   * @throws IOException
+   * @throws NoSuchAlgorithmException
+   */
+  private void startServer() throws InterruptedException, IOException, NoSuchAlgorithmException {
     // 1. setup users
     loadUsersFromEnv();
 
@@ -124,34 +133,42 @@ public class SftpServer {
 
   /**
    * get host key provider from file or generate random key inmemory
+   * TODO: support ED25519 keys
+   *
+   * @throws NoSuchAlgorithmException
    */
-  private KeyPairProvider getKeyProvider() {
+  private KeyPairProvider getKeyProvider() throws NoSuchAlgorithmException {
     var hostKeyPath = config.getHostKeyPath();
+
     if ( hostKeyPath != null && !hostKeyPath.trim().isEmpty() ) {
       var keyFile = new File( hostKeyPath );
       if ( keyFile.exists() && keyFile.isFile() ) {
         LOG.info( "using host key from: {}", keyFile.getAbsolutePath() );
-        return new FileKeyPairProvider( keyFile.toPath() );
+        var provider = new FileKeyPairProvider( keyFile.toPath() );
+
+        if ( config.getHostKeyPassword() != null && !config.getHostKeyPassword().trim().isEmpty() ) {
+          provider.setPasswordFinder( FilePasswordProvider.of( config.getHostKeyPassword() ) );
+        }
+
+        return provider;
       }
       LOG.error( "host key file not found: {}", keyFile.getAbsolutePath() );
       System.exit( 1 );
     }
+
     LOG.info( "generating random host key inmemory" );
     return KeyPairProvider.wrap( generateInMemoryKey() );
   }
 
   /**
    * generate random host key inmemory
+   *
+   * @throws NoSuchAlgorithmException
    */
-  private KeyPair generateInMemoryKey() {
-    try{
-      var g = KeyPairGenerator.getInstance("RSA");
-      g.initialize(2048);
-      return g.generateKeyPair();
-    } catch(Exception e){
-      LOG.error( e.getMessage(), e );
-      throw new RuntimeException( "failed to generate host key", e );
-    }
+  private KeyPair generateInMemoryKey() throws NoSuchAlgorithmException {
+    var g = KeyPairGenerator.getInstance("RSA");
+    g.initialize(2048);
+    return g.generateKeyPair();
   }
 
   /**

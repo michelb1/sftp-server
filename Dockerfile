@@ -13,7 +13,7 @@ RUN mkdir -p /app/home/
 COPY --from=build /app/target/*jar-with-dependencies.jar app.jar
 
 RUN addgroup -g 1001 -S sftpgroup && adduser -u 1001 -S sftpuser -G sftpgroup
-RUN chown -R sftpuser:sftpgroup /app/home/
+RUN chown -R sftpuser:sftpgroup /app/
 
 USER 1001
 

@@ -6,10 +6,15 @@ public class SftpEnvironmentConfig {
 
   public static final String SFTP_USERS = "SFTP_USERS";
   public static final String SFTP_PORT = "SFTP_PORT";
-  public static final String HOST_KEY_PATH = "HOST_KEY_PATH";
+  public static final String SFTP_HOST_KEY_PATH = "SFTP_HOST_KEY_PATH";
+  public static final String SFTP_HOST_KEY_PW = "SFTP_HOST_KEY_PW";
 
   public static final String SFTP_DELETE_FOLDER_PERMISSION = "SFTP_DELETE_FOLDER_PERMISSION";
   public static final String SFTP_CREATE_FOLDER_PERMISSION = "SFTP_CREATE_FOLDER_PERMISSION";
+
+  private String getConfigFromEnvironment( final String key ) {
+    return getConfigFromEnvironment( key, null );
+  }
 
   private String getConfigFromEnvironment( final String key, final String defaultValue ) {
     var value = System.getenv( key );
@@ -17,11 +22,15 @@ public class SftpEnvironmentConfig {
   }
 
   public String getHostKeyPath() {
-    return getConfigFromEnvironment( HOST_KEY_PATH, null );
+    return getConfigFromEnvironment( SFTP_HOST_KEY_PATH );
+  }
+
+  public String getHostKeyPassword() {
+    return getConfigFromEnvironment( SFTP_HOST_KEY_PW );
   }
 
   public String getUsers() {
-    return getConfigFromEnvironment( SFTP_USERS, "" );
+    return getConfigFromEnvironment( SFTP_USERS );
   }
 
   public int getPort() {

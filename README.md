@@ -5,11 +5,17 @@ A lightweight SFTP server built on top of Apache MINA SSHD. This project is spec
 
 ## Config (Environment)
 
+#Required:
+
 SFTP_USERS='user1:password(bcrypt):home\_dir1:subfolder1,subfolder2;user2:password(bcrypt):home\_dir2'
 
-SFTP_PORT=2222 (Default)
+#Optional:
 
-SFTP_HOST_KEY_PATH (Default -> use a generated key)
+SFTP_PORT (Default 2222)
+
+SFTP_HOST_KEY_PATH (Default -> use a generated key - currently only works with RSA keys)
+
+SFTP_HOST_KEY_PW (Default -> no passwordcheck)
 
 SFTP_CREATE_FOLDER_PERMISSION=true/false (Default false)
 
@@ -24,7 +30,7 @@ docker run -e SFTP\_USERS='michelb1:$2a$12$AIO5VkkYfTGBoByYg4rSHeQy0rUOWDQ1zUnIB
 \-p 2222:2222 sftpserver:latest
 
 
-**Important**: The home folder must be located under /app/home/. Due to non-root container security policies, creating the directory in any other path will fail with permission errors. If you need persistent storage, ensure you mount your volume directly inside /app/home/ and configure the appropriate security context.
+**Important**: Place the home folder and hostkey under the /app/ directory. Because the container runs as a non-root user, creating files or directories outside this path may result in permission errors.
 
 
 
