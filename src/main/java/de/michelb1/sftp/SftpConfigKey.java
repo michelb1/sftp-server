@@ -1,0 +1,10 @@
+package de.michelb1.sftp;
+
+public enum SftpConfigKey {
+  SFTP_USERS,
+  SFTP_PORT,
+  SFTP_HOST_KEY_PATH,
+  SFTP_HOST_KEY_PW,
+  SFTP_DELETE_FOLDER_PERMISSION,
+  SFTP_CREATE_FOLDER_PERMISSION;
+}

@@ -36,11 +36,17 @@ public class SftpServer {
 
   private static final Logger LOG = LoggerFactory.getLogger( SftpServer.class );
 
-  private static final Map<String, UserConfig> userDatabase = new HashMap<>();
-  private static final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
-  private static final SftpEnvironmentConfig config = new SftpEnvironmentConfig();
+  private static final Map< String, UserConfig > userMap = new HashMap<>();
+  private static final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder( 12 );
 
-  public static void main( String[] args ) throws IOException, InterruptedException, NoSuchAlgorithmException {
+  /**
+   * entrypoint
+   *
+   * @throws NoSuchAlgorithmException
+   * @throws InterruptedException
+   * @throws IOException
+   */
+  void main() throws NoSuchAlgorithmException, InterruptedException, IOException {
     new SftpServer().startServer();
   }
 
@@ -51,80 +57,72 @@ public class SftpServer {
    * @throws IOException
    * @throws NoSuchAlgorithmException
    */
-  private void startServer() throws InterruptedException, IOException, NoSuchAlgorithmException {
-    // 1. setup users
-    loadUsersFromEnv();
+  public void startServer() throws InterruptedException, IOException, NoSuchAlgorithmException {
 
-    if (userDatabase.isEmpty()) {
-      LOG.error("ERROR: no users in Environment 'SFTP_USERS'");
-      System.exit(1);
+    // create users from environment variable SFTP_USERS
+    createUsers();
+
+    if ( userMap.isEmpty() ) {
+      LOG.error( "ERROR: no users in Environment 'SFTP_USERS'" );
+      System.exit( 1 );
     }
 
-    // 2. initialize ssh Server
     try ( var sshd = SshServer.setUpDefaultServer(); ) {
-      sshd.setPort( config.getPort() );
-
-      // set host key provider
+      sshd.setPort( SftpConfig.getPort() );
       sshd.setKeyPairProvider( getKeyProvider() );
 
-      // 3. authenticate user
       // TODO: support sshkey authentication
       sshd.setPasswordAuthenticator( ( username, password, _ ) -> {
-        var user = userDatabase.get(username);
-        return user != null && encoder.matches(password, user.getPassword());
-      });
+        var user = userMap.get( username );
+        return user != null && encoder.matches( password, user.getPassword() );
+      } );
 
-      // 4. Chroot / Virtual File System per user
+      // Chroot / Virtual File System per user
       var fileSystemFactory = new VirtualFileSystemFactory();
 
-      userDatabase.forEach( ( username, userconfig ) -> {
-        fileSystemFactory.setUserHomeDir( username, Paths.get( userconfig.getHomeDir() ) );
-      });
+      userMap.forEach( ( username, userconfig ) -> fileSystemFactory.setUserHomeDir( username, Paths.get( userconfig.getHomeDir() ) ) );
 
-      sshd.setFileSystemFactory(fileSystemFactory);
+      sshd.setFileSystemFactory( fileSystemFactory );
 
-      // 5. activate SFTP-Subsystem
       var sftpFactory = new SftpSubsystemFactory();
 
       // VirtualFileSystemFactory does not support SecureDirectoryStream;
       // bypass the secure-path lookup and open directly
-      sftpFactory.setFileSystemAccessor(new SftpFileSystemAccessor() {
+      sftpFactory.setFileSystemAccessor( new SftpFileSystemAccessor() {
         @Override
-        public SeekableByteChannel openFile(SftpSubsystemProxy subsystem, FileHandle fileHandle,
-            Path fileToOpen, String handle, Set<? extends OpenOption> options,
-            FileAttribute<?>... attrs) throws IOException {
-          return Files.newByteChannel(fileToOpen, options, attrs);
+        public SeekableByteChannel openFile( SftpSubsystemProxy subsystem, FileHandle fileHandle, Path fileToOpen, String handle,
+            Set< ? extends OpenOption > options, FileAttribute< ? >... attrs ) throws IOException {
+          return Files.newByteChannel( fileToOpen, options, attrs );
         }
 
-      });
+      } );
 
       // set sftp permissions
-      sftpFactory.addSftpEventListener(new AbstractSftpEventListenerAdapter() {
+      sftpFactory.addSftpEventListener( new AbstractSftpEventListenerAdapter() {
 
         @Override
-        public void removing(ServerSession session, Path path, boolean isDirectory) throws IOException {
-          if ( isDirectory && !config.getBooleanValue( SftpEnvironmentConfig.SFTP_DELETE_FOLDER_PERMISSION ) ) {
-            throw new AccessDeniedException ("Delete operation is forbidden.");
+        public void removing( ServerSession session, Path path, boolean isDirectory ) throws IOException {
+          if ( isDirectory && !SftpConfig.getBooleanValue( SftpConfigKey.SFTP_DELETE_FOLDER_PERMISSION ) ) {
+            throw new AccessDeniedException( "Delete operation is forbidden." );
           }
-          super.removing(session, path, isDirectory);
+          super.removing( session, path, isDirectory );
         }
 
         @Override
-        public void creating(ServerSession session, Path path, Map<String, ?> attrs) throws IOException {
-          if ( !config.getBooleanValue( SftpEnvironmentConfig.SFTP_CREATE_FOLDER_PERMISSION ) ) {
-            throw new AccessDeniedException ("Directory creation is forbidden.");
+        public void creating( ServerSession session, Path path, Map< String, ? > attrs ) throws IOException {
+          if ( !SftpConfig.getBooleanValue( SftpConfigKey.SFTP_CREATE_FOLDER_PERMISSION ) ) {
+            throw new AccessDeniedException( "Directory creation is forbidden." );
           }
-          super.creating(session, path, attrs);
+          super.creating( session, path, attrs );
         }
-      });
+      } );
 
-      sshd.setSubsystemFactories(Collections.singletonList(sftpFactory));
+      sshd.setSubsystemFactories( Collections.singletonList( sftpFactory ) );
 
-      // 6. start Server
       sshd.start();
 
-      LOG.info( "sftp-server listening on port {}", Integer.valueOf( config.getPort() ) );
-      LOG.info( "user created: {}", userDatabase.keySet() );
+      LOG.info( "sftp-server listening on port {}", Integer.valueOf( SftpConfig.getPort() ) );
+      LOG.info( "user created: {}", userMap.keySet() );
 
       // wait for termination
       Thread.currentThread().join();
@@ -138,7 +136,7 @@ public class SftpServer {
    * @throws NoSuchAlgorithmException
    */
   private KeyPairProvider getKeyProvider() throws NoSuchAlgorithmException {
-    var hostKeyPath = config.getHostKeyPath();
+    var hostKeyPath = SftpConfig.getHostKeyPath();
 
     if ( hostKeyPath != null && !hostKeyPath.trim().isEmpty() ) {
       var keyFile = new File( hostKeyPath );
@@ -146,8 +144,8 @@ public class SftpServer {
         LOG.info( "using host key from: {}", keyFile.getAbsolutePath() );
         var provider = new FileKeyPairProvider( keyFile.toPath() );
 
-        if ( config.getHostKeyPassword() != null && !config.getHostKeyPassword().trim().isEmpty() ) {
-          provider.setPasswordFinder( FilePasswordProvider.of( config.getHostKeyPassword() ) );
+        if ( SftpConfig.getHostKeyPassword() != null && !SftpConfig.getHostKeyPassword().trim().isEmpty() ) {
+          provider.setPasswordFinder( FilePasswordProvider.of( SftpConfig.getHostKeyPassword() ) );
         }
 
         return provider;
@@ -166,8 +164,8 @@ public class SftpServer {
    * @throws NoSuchAlgorithmException
    */
   private KeyPair generateInMemoryKey() throws NoSuchAlgorithmException {
-    var g = KeyPairGenerator.getInstance("RSA");
-    g.initialize(2048);
+    var g = KeyPairGenerator.getInstance( "RSA" );
+    g.initialize( 2048 );
     return g.generateKeyPair();
   }
 
@@ -175,48 +173,65 @@ public class SftpServer {
    * Format: user1:bcrypthash:home_dir1:subfolder1,subfolder2;user2:bcrypthash:home_dir2;
    * Subfolders are optional.
    */
-  private void loadUsersFromEnv() {
-    var envRaw = config.getUsers();
-    if (envRaw == null || envRaw.trim().isEmpty()) {
+  private void createUsers() {
+    var envRaw = SftpConfig.getUsers();
+    if ( envRaw == null || envRaw.trim().isEmpty() ) {
       return;
     }
 
-    var users = envRaw.split(";");
-    for (var user : users) {
+    for ( var user : envRaw.split( ";" ) ) {
       // split (user, hash, home, subfolders)
-      var parts = user.split(":", 4);
+      var parts = user.split( ":", 4 );
 
-      if (parts.length >= 3) {
+      if ( parts.length >= 3 ) {
         var username = parts[0].trim();
         var bcryptHash = parts[1].trim();
         var homeDir = parts[2].trim();
 
-        // 1. create home folder
-        var homeFolder = new File(homeDir);
-        if (!homeFolder.exists()) {
-          homeFolder.mkdirs();
-          LOG.info( "homefolder created: {}", homeFolder.getAbsolutePath() );
-        }
+        var homeFolder = createFolder( new File( homeDir ) );
+        createSubfolders( parts, homeFolder );
 
-        // 2. create subfolders
-        if (parts.length == 4 && !parts[3].trim().isEmpty()) {
-          var subfolders = parts[3].split(",");
-          for (var subfolder : subfolders) {
-            var cleanedSubfolder = subfolder.trim();
-            if (!cleanedSubfolder.isEmpty()) {
-              var subDir = new File(homeFolder, cleanedSubfolder);
-              if (!subDir.exists()) {
-                subDir.mkdirs();
-                LOG.info( "subfolder created: {}", subDir.getAbsolutePath() );
-              }
-            }
-          }
-        }
-
-        userDatabase.put(username, new UserConfig(bcryptHash, homeDir));
+        userMap.put( username, new UserConfig( bcryptHash, homeDir ) );
       } else {
         LOG.error( "invalid userformat in SFTP_USERS: {}", user );
       }
     }
   }
+
+  /**
+   * create folder if not exists
+   */
+  private File createFolder( final File folder ) {
+
+    if ( !folder.exists() ) {
+      if ( folder.mkdirs() ) {
+        LOG.info( "folder created: {}", folder.getAbsolutePath() );
+      } else {
+        LOG.error( "failed to create folder: {}", folder.getAbsolutePath() );
+        System.exit( 1 );
+      }
+    }
+
+    return folder;
+  }
+
+  /**
+   * create subfolders if specified
+   */
+  private void createSubfolders( final String[] parts, final File parentFolder ) {
+
+    if ( parts.length == 4 && !parts[3].trim().isEmpty() ) {
+      var subfolders = parts[3].split( "," );
+
+      for ( var subfolder : subfolders ) {
+        var trimmedSubfolder = subfolder.trim();
+
+        if ( !trimmedSubfolder.isEmpty() ) {
+          var subDir = new File( parentFolder, trimmedSubfolder );
+          createFolder( subDir );
+        }
+      }
+    }
+  }
+
 }
