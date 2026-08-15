@@ -5,11 +5,11 @@ A lightweight SFTP server built on top of Apache MINA SSHD. This project is spec
 
 ## Config (Environment)
 
-# Required:
+### Required:
 
 SFTP_USERS='user1:password(bcrypt):home\_dir1:subfolder1,subfolder2;user2:password(bcrypt):home\_dir2'
 
-# Optional:
+### Optional:
 
 SFTP_PORT (Default 2222)
 
