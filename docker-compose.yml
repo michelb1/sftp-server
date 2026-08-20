@@ -1,0 +1,17 @@
+services:
+  sftp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sftpserver:latest
+    container_name: sftp_server
+    restart: unless-stopped
+    ports:
+      - 2222:2222
+    environment:
+      - SFTP_USERS=michelb1:$$2a$$12$$AIO5VkkYfTGBoByYg4rSHeQy0rUOWDQ1zUnIBhjEMkcWlhMi069.u:/app/home/michelb1:upload
+      # genkey: ssh-keygen -t ed25519 -N changeit -f ./keys/host.key -C "sftp-server-hostkey"
+      - SFTP_HOST_KEY_PATH=/app/keys/host.key
+      - SFTP_HOST_KEY_PW=changeit
+    volumes:
+      - ./keys:/app/keys

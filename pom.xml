@@ -14,9 +14,29 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <sshd.version>2.18.0</sshd.version>
         <slf4j.version>2.0.18</slf4j.version>
+        <bc.version>1.85</bc.version>
     </properties>
 
     <dependencies>
+        <!-- Bouncycastle -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcutil-jdk18on</artifactId>
+            <version>${bc.version}</version>
+        </dependency>
+
         <!-- Apache MINA SSHD Core-Funktionalität -->
         <dependency>
             <groupId>org.apache.sshd</groupId>
