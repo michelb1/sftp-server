@@ -1,0 +1,24 @@
+# This Dockerfile uses hardened base images
+FROM dhi.io/maven:3.9-jdk25-alpine-dev AS build
+WORKDIR /app
+
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package
+
+RUN mkdir -p /app/home
+
+RUN addgroup -g 1001 -S sftpgroup && adduser -u 1001 -S sftpuser -G sftpgroup
+
+FROM dhi.io/eclipse-temurin:25-alpine3.24
+WORKDIR /app
+
+COPY --from=build /etc/passwd /etc/passwd
+COPY --from=build /etc/group /etc/group
+
+COPY --from=build --chown=1001:1001 /app/home /app/home
+COPY --from=build --chown=1001:1001 /app/target/*jar-with-dependencies.jar app.jar
+
+USER 1001
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
