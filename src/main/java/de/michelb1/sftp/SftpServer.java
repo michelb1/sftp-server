@@ -19,6 +19,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.config.keys.loader.KeyPairResourceParser;
@@ -44,6 +46,14 @@ public class SftpServer {
 	private static final Map<String, UserConfig> userMap = new HashMap<>();
 	private static final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
 
+	private final ExecutorService sftpExecutor = Executors.newSingleThreadExecutor(runnable -> {
+		var t = new Thread(runnable, "sftp-server-runner");
+		t.setDaemon(false);
+		return t;
+	});
+	
+	private SshServer sshd;
+
 	/**
 	 * entrypoint
 	 *
@@ -56,13 +66,67 @@ public class SftpServer {
 	}
 
 	/**
-	 * start SFTP server
+	 * starts the Server process in a new Thread
+	 * 
+	 * @throws IOException
+	 * @throws InterruptedException
+	 * @throws GeneralSecurityException
+	 */
+	public void startServer() throws IOException, InterruptedException, GeneralSecurityException {
+		initServer();
+
+		sftpExecutor.submit(() -> {
+			try {
+				sshd.start();
+				LOG.info("sftp-server listening on port {}", Integer.valueOf(SftpConfig.getPort()));
+			} catch (Exception e) {
+				LOG.error(e.getMessage(), e);
+				System.exit(1);
+			}
+		});
+		
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            LOG.info("stopping SFTP-Server");
+            try {
+               stopServer();
+            } catch (Exception e) {
+            	LOG.error(e.getMessage(), e);
+            }
+        }));
+	}
+
+	/**
+	 * stops the SFTP Server
+	 * 
+	 * @throws IOException
+	 */
+	public void stopServer() throws IOException {
+		if (sshd != null) {
+			sshd.stop(true);
+		}
+	}
+	
+	/**
+	 * checks if the server is fully running
+	 * 
+	 * @return server is running
+	 */
+    public boolean isRunning() {
+        if (sshd == null || !sshd.isOpen()) {
+            return false;
+        }
+        var boundAddresses = sshd.getBoundAddresses();
+        return boundAddresses != null && !boundAddresses.isEmpty();
+    }
+	
+	/**
+	 * initializes the SFTP server
 	 *
 	 * @throws InterruptedException
 	 * @throws IOException
 	 * @throws GeneralSecurityException
 	 */
-	public void startServer() throws InterruptedException, IOException, GeneralSecurityException {
+	private void initServer() throws InterruptedException, IOException, GeneralSecurityException {
 
 		// setup bouncycastle
 		setupSecurityProvider();
@@ -75,51 +139,42 @@ public class SftpServer {
 			System.exit(1);
 		}
 
-		try (var sshd = SshServer.setUpDefaultServer();) {
-			sshd.setPort(SftpConfig.getPort());
-			sshd.setKeyPairProvider(getKeyProvider());
+		sshd = SshServer.setUpDefaultServer();
 
-			// TODO: support sshkey authentication
-			sshd.setPasswordAuthenticator((username, password, _) -> {
-				var user = userMap.get(username);
-				return user != null && encoder.matches(password, user.getPassword());
-			});
+		sshd.setPort(SftpConfig.getPort());
+		sshd.setKeyPairProvider(getKeyProvider());
 
-			// Chroot / Virtual File System per user
-			var fileSystemFactory = new VirtualFileSystemFactory();
+		// TODO: support sshkey authentication
+		sshd.setPasswordAuthenticator((username, password, _) -> {
+			var user = userMap.get(username);
+			return user != null && encoder.matches(password, user.getPassword());
+		});
 
-			userMap.forEach((username, userconfig) -> fileSystemFactory.setUserHomeDir(username,
-					Paths.get(userconfig.getHomeDir())));
+		// Chroot / Virtual File System per user
+		var fileSystemFactory = new VirtualFileSystemFactory();
 
-			sshd.setFileSystemFactory(fileSystemFactory);
+		userMap.forEach((username, userconfig) -> fileSystemFactory.setUserHomeDir(username,
+				Paths.get(userconfig.getHomeDir())));
 
-			var sftpFactory = new SftpSubsystemFactory();
+		sshd.setFileSystemFactory(fileSystemFactory);
 
-			// VirtualFileSystemFactory does not support SecureDirectoryStream;
-			// bypass the secure-path lookup and open directly
-			sftpFactory.setFileSystemAccessor(new SftpFileSystemAccessor() {
-				@Override
-				public SeekableByteChannel openFile(SftpSubsystemProxy subsystem, FileHandle fileHandle,
-						Path fileToOpen, String handle, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
-						throws IOException {
-					return Files.newByteChannel(fileToOpen, options, attrs);
-				}
+		var sftpFactory = new SftpSubsystemFactory();
 
-			});
+		// VirtualFileSystemFactory does not support SecureDirectoryStream;
+		// bypass the secure-path lookup and open directly
+		sftpFactory.setFileSystemAccessor(new SftpFileSystemAccessor() {
+			@Override
+			public SeekableByteChannel openFile(SftpSubsystemProxy subsystem, FileHandle fileHandle, Path fileToOpen,
+					String handle, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
+				return Files.newByteChannel(fileToOpen, options, attrs);
+			}
 
-			// set sftp permissions
-			sftpFactory.addSftpEventListener(new SftpEventListener());
+		});
 
-			sshd.setSubsystemFactories(Collections.singletonList(sftpFactory));
+		// set sftp permissions
+		sftpFactory.addSftpEventListener(new SftpEventListener());
 
-			sshd.start();
-
-			LOG.info("sftp-server listening on port {}", Integer.valueOf(SftpConfig.getPort()));
-			LOG.info("user created: {}", userMap.keySet());
-
-			// wait for termination
-			Thread.currentThread().join();
-		}
+		sshd.setSubsystemFactories(Collections.singletonList(sftpFactory));
 	}
 
 	/**
@@ -202,7 +257,7 @@ public class SftpServer {
 
 		for (var user : envRaw.split(";")) {
 			// split (user, hash, home, subfolders)
-			var parts = user.split(":", 4);
+			var parts = user.split(":(?![\\\\/])", 4);
 
 			if (parts.length >= 3) {
 				var username = parts[0].trim();
@@ -216,6 +271,8 @@ public class SftpServer {
 				LOG.error("invalid userformat in SFTP_USERS: {}", user);
 			}
 		}
+
+		LOG.info("user created: {}", userMap.keySet());
 	}
 
 	/**
