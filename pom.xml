@@ -14,7 +14,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <sshd.version>2.19.0</sshd.version>
         <slf4j.version>2.0.19</slf4j.version>
-        <bc.version>1.85</bc.version>
+        <bc.version>1.86</bc.version>
     </properties>
 
     <dependencies>
