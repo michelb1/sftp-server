@@ -2,6 +2,7 @@
 
 A lightweight SFTP server built on top of Apache MINA SSHD. This project is specifically designed with modern cloud-native infrastructures and strict container security principles in mind.
 
+Dockerhub: https://hub.docker.com/r/imichelb1/sftp-server
 
 
 ## Config (Environment)
